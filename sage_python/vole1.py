@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from sage.all import *
 from sage.structure.element import RingElement
+from typing import Any
+from sage.rings.polynomial.polynomial_element import Polynomial
 # from agents import Prover, Verifier
 
 # ---------------------------------------------------
@@ -8,10 +10,11 @@ from sage.structure.element import RingElement
 # ---------------------------------------------------
 
 p = 5
-r = 1
+r = 3
 
 Fp = GF(p)
 Fpr = Fp.extension(r, 'a')
+S, t = PolynomialRing(Fpr, 't').objgen()
 
 print(f"modulus of field is {Fpr.modulus()}")
 
@@ -22,14 +25,20 @@ print(f"modulus of field is {Fpr.modulus()}")
 @dataclass
 class VOLETuple:
     #random vole
+    rho_u_t: Any = None # polynomial representation of u, used for opening phase
+    gamma_u_delta: Any=None
     u: RingElement | None = None #random vole
     b: RingElement | None = None
     v: RingElement | None = None # random vole evaluation
+    
 
     # witness vole
     w: RingElement | None = None # prover's actual witness
+    # w_poly: RingElement | None = None # polynomial representation of witness, used for opening phase
     q: RingElement | None = None #VOLE evaluation on the witness q = v + d Delta = u Delta + b + w Delta - u Delta = w delta + b
-    
+    rho_w_t: Polynomial | None = None # 
+    gamma_w_delta: RingElement | None = None
+
     # correction values
     correction_prover: RingElement | None = None # correction value d = w -u
     correction_verifier: RingElement | None = None # correction value d = w -u, stored on verifiers side after transmission from prover
@@ -95,6 +104,8 @@ class Prover:
          Update ith witness 
         """
         self.vole_tuples[index].w = w
+        self.vole_tuples[index].rho_w_t = w*t + self.vole_tuples[index].b
+        # self.vole_tuples[index].w_poly = w  # for now just set w_poly to w, in a real implementation this would be a polynomial representation of w, used for the opening phase
 
     def compute_correction_value_d(self, index):
         # compute correction value
@@ -143,6 +154,7 @@ class Verifier:
         #q = v + d Delta = u Delta + b + w Delta - u Delta = w delta + b
 
         self.vole_tuples[index].q = q #update q in verifiers state
+        self.vole_tuples[index].gamma_w_delta =q # copy into poly
 
 
 # ---------------------------------------------------
@@ -193,10 +205,27 @@ def sVOLE(prover: Prover, verifier: Verifier, command, *args):
 
             b = Fpr.random_element() # macro auth starts here
 
+            
+            #--------- rho_u(t) = u T + b (testing rn)------------------------
+            
+            rho_u_t = u * t + b
+            
+
+            # verifier evaluates rho_u at delta to get v
+            gamma_u_delta = rho_u_t(verifier.delta) # this is the same as u*delta + b
+
             v = verifier.delta * u + b
+
+            assert gamma_u_delta == v, "Evaluation of rho_u at delta does not match expected value"
+            #-----------------------------------
 
             prover.add_commit(u, b)
             verifier.add_eval(v)
+
+            #-----------------------------------
+            prover.vole_tuples[-1].rho_u_t = rho_u_t #experimental
+            prover.vole_tuples[-1].gamma_u_delta = gamma_u_delta #experimental
+            #------------------------------------
 
             print(f"(u={u}, b={b}, v={v}) : {v}={u}*{verifier.delta}+{b} mod {p}")
 
@@ -242,6 +271,29 @@ def commit(prover:Prover, verifier: Verifier, witness: list[RingElement]):
     # 3. Adjust on V's side
     
 
+def open(prover: Prover, verifier: Verifier, x, index):
+    """
+    Open phase of sVOLE protocol.
+    Prover sends polynomial rho_w(t), w
+    V checks if :
+    1. rho_w(t) = w
+    2. degree(rho_w(t)) == d 
+    3. rho_w(t=Delta) = gamma_w_delta
+    """
+
+    assert index < len(prover.vole_tuples), "Invalid index for opening"
+    assert index < len(verifier.vole_tuples), "Invalid index for opening"
+    assert prover.vole_tuples[index].w == x, "Prover's witness does not match x"
+    # need VOPES for this
+
+    rho_w_t = prover.vole_tuples[index].rho_w_t
+    assert rho_w_t.coefficients()[-1]== x, "highest degree coefficeint not equal"
+    assert rho_w_t(verifier.delta) == verifier.vole_tuples[index].gamma_w_delta, "eval not equal"
+    # add degree check
+    
+    print(f"opening of {x=} succesful")
+    pass
+
 
 # ---------------------------------------------------
 # Run protocol
@@ -252,7 +304,7 @@ verifier = Verifier()
 
 sVOLE(prover, verifier, "Init")
 
-commit(prover, verifier, [Fp(2), Fp(3), Fp(4)])
+commit(prover, verifier, [Fp(3)])
 
 
 # sVOLE(prover, verifier, "sVOLE", 1)
@@ -264,14 +316,7 @@ print(verifier)
 
 test_evaluation(prover, verifier)
 
-# commit(prover, verifier, 2)
-w = 2
-#compute correction value
-d = w - prover.vole_tuples[0].u
-print(f"correction value: {d}")
+open(prover, verifier, Fp(3), 0)
 
-#adjust on verifiers side:
-q = verifier.vole_tuples[0].v
-q = q + verifier.delta + d
 
 
