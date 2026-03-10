@@ -36,6 +36,50 @@ print(f"modulus of field is {Fpr.modulus()}")
 
 
 
+@dataclass
+class RandomVOLE:
+    u: FpElement
+    b: FprElement
+    v: FprElement
+    d: FpElement
+
+    def check(self, delta: RingElement) -> bool:
+        return self.v == (delta * self.u) + self.b
+
+@dataclass
+class VOLEProver:
+    rho_w_t: FprPoly
+
+    def __str__(self) -> str:
+        return f"(rho_w_t={self.rho_w_t})"
+    
+
+
+@dataclass
+class VOLEVerifier:
+    gamma_w_delta: FprElement
+
+    def __str__(self) -> str:
+        return f"(gamma_w_delta={self.gamma_w_delta})"
+
+
+@dataclass
+class VOLE:
+    proverVOLE: VOLEProver
+    verifierVOLE: VOLEVerifier
+
+    def __str__(self) -> str:
+        return (
+            "VOLE(\n"
+            f"  prover   = {self.proverVOLE}\n"
+            f"  verifier = {self.verifierVOLE}\n"
+            ")"
+        )
+
+
+
+
+
 
 
 @dataclass
@@ -105,6 +149,7 @@ class VOLETuple:
 class Prover:
     # w: list[RingElement] | None = None
     vole_tuples: list[VOLETuple] = field(default_factory=list)
+    vole_tuples_prover: list[VOLEProver] = field(default_factory=list)
     
 
     def append_commit(self, u: FpElement, b: FpElement, rho_u_t: FprPoly, degree: int) -> None:
@@ -112,19 +157,20 @@ class Prover:
         self.vole_tuples.append(VOLETuple(u=u, b=b, rho_u_t=rho_u_t, degree=degree))
 
     def __str__(self):
-        tuples_str = "\n".join(str(t) for t in self.vole_tuples)
+        tuples_str = "\n".join(str(t) for t in self.vole_tuples_prover)
         return (
             "=== Prover ===\n"
             # f"witness: {self.w}\n"
             f"VOLE tuples:\n{tuples_str}"
         )
-    def update_witness(self, w:FpElement, index:int)->None:
+    def update_witness(self, w:FpElement, index:int)->FprPoly:
         """ 
          Update ith witness 
         """
         self.vole_tuples[index].w = w
-        self.vole_tuples[index].rho_w_t = w*T + self.vole_tuples[index].b
-        # self.vole_tuples[index].w_poly = w  # for now just set w_poly to w, in a real implementation this would be a polynomial representation of w, used for the opening phase
+        rho_w_t = w*T + self.vole_tuples[index].b
+        self.vole_tuples[index].rho_w_t = rho_w_t
+        return rho_w_t
 
     def compute_correction_value_d(self, index:int)->None:
         # compute correction value
@@ -148,12 +194,13 @@ class Prover:
 class Verifier:
     delta: FprElement | None = None
     vole_tuples: list[VOLETuple] = field(default_factory=list)
+    vole_tuples_verifier: list[VOLEVerifier] = field(default_factory=list)
 
     def append_eval(self, v:FprElement, gamma_u_delta:FprElement, degree:int)->None:
         self.vole_tuples.append(VOLETuple(u=None, b=None, v=v, gamma_u_delta=gamma_u_delta, degree=degree))
 
     def __str__(self):
-        tuples_str = "\n".join(str(t) for t in self.vole_tuples)
+        tuples_str = "\n".join(str(t) for t in self.vole_tuples_verifier)
         return (
             "=== Verifier ===\n"
             f"delta: {self.delta}\n"
@@ -174,11 +221,11 @@ class Verifier:
         q = v + (self.delta * d) # adjust v with correction value d and delta to get 
         #q = v + d Delta = u Delta + b + w Delta - u Delta = w delta + b
         gamma_w_delta = self.vole_tuples[index].gamma_u_delta + (self.delta * d) # adjust gamma_u_delta with correction value d and delta to get gamma_w_delta = u Delta + b + w Delta - u Delta = w delta + b
-
+        print(f"{gamma_w_delta=}")
         assert q == gamma_w_delta, "Adjusted evaluation does not match expected value"
         self.vole_tuples[index].q = q #update q in verifiers state
         self.vole_tuples[index].gamma_w_delta =gamma_w_delta # copy into poly
-
+        return gamma_w_delta
 
 # ---------------------------------------------------
 # Testing
@@ -273,7 +320,7 @@ def commit(prover:Prover, verifier: Verifier, witness: list[FpElement], degree:i
     for i in range(length_witness):
         w = witness[i]
         # add witness to prover's state
-        prover.update_witness(w, i)
+        rho_w_t= prover.update_witness(w, i)
 
         # Prover computes correction value 
         d = prover.compute_correction_value_d(i)
@@ -289,7 +336,25 @@ def commit(prover:Prover, verifier: Verifier, witness: list[FpElement], degree:i
         verifier.update_correction(d,i)
 
         #verifier recomputes vole evaluation and updates it
-        verifier.update_eval_with_correction(d,i)
+        gamma_w_delta= verifier.update_eval_with_correction(d,i)
+
+        #create PROVER and verifier voles
+        proverVOLE = VOLEProver(
+            rho_w_t=rho_w_t,
+        )
+
+        verifierVOLE = VOLEVerifier(
+            gamma_w_delta=gamma_w_delta,
+        )
+
+        vole = VOLE(
+            proverVOLE=proverVOLE,
+            verifierVOLE=verifierVOLE
+        )
+
+        prover.vole_tuples_prover.append(proverVOLE)
+        verifier.vole_tuples_verifier.append(verifierVOLE)
+
 
 
 
@@ -387,10 +452,11 @@ verifier = Verifier()
 
 sVOLE(prover, verifier, "Init")
 
+VOLES_global_list = []
 
-VOLES = [Fp(1), Fp(4)]
+VOLES_user_defined = [Fp(1), Fp(4)]
 
-commit(prover, verifier, VOLES, 1)
+commit(prover, verifier, VOLES_user_defined, 1)
 
 
 # sVOLE(prover, verifier, "sVOLE", 1)
@@ -406,8 +472,8 @@ print(verifier)
 
 # test_evaluation(prover, verifier)
 
-open(prover, verifier, 0, 1,  VOLES[0])
-open(prover, verifier, 1, 1, VOLES[1])
+open(prover, verifier, 0, 1,  VOLES_user_defined[0])
+open(prover, verifier, 1, 1, VOLES_user_defined[1])
 open(prover, verifier, 2, 1)
 
 
