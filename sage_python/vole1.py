@@ -36,55 +36,11 @@ print(f"modulus of field is {Fpr.modulus()}")
 
 
 
-@dataclass
-class RandomVOLE:
-    u: FpElement
-    b: FprElement
-    v: FprElement
-    d: FpElement
-
-    def check(self, delta: RingElement) -> bool:
-        return self.v == (delta * self.u) + self.b
-
-@dataclass
-class VOLEProver:
-    rho_w_t: FprPoly
-
-    def __str__(self) -> str:
-        return f"(rho_w_t={self.rho_w_t})"
-    
-
-
-@dataclass
-class VOLEVerifier:
-    gamma_w_delta: FprElement
-
-    def __str__(self) -> str:
-        return f"(gamma_w_delta={self.gamma_w_delta})"
-
-
-@dataclass
-class VOLE:
-    proverVOLE: VOLEProver
-    verifierVOLE: VOLEVerifier
-
-    def __str__(self) -> str:
-        return (
-            "VOLE(\n"
-            f"  prover   = {self.proverVOLE}\n"
-            f"  verifier = {self.verifierVOLE}\n"
-            ")"
-        )
-
-
-
-
-
 
 
 @dataclass
 class VOLETuple:
-    degree :int
+    degree_poly :int
 
     #random vole
     rho_u_t:       FprPoly = None # uT + b
@@ -149,15 +105,15 @@ class VOLETuple:
 class Prover:
     # w: list[RingElement] | None = None
     vole_tuples: list[VOLETuple] = field(default_factory=list)
-    vole_tuples_prover: list[VOLEProver] = field(default_factory=list)
+    
     
 
-    def append_commit(self, u: FpElement, b: FpElement, rho_u_t: FprPoly, degree: int) -> None:
+    def append_commit(self, u: FpElement, b: FpElement, rho_u_t: FprPoly, degree_poly: int) -> None:
         # internal function to append a commit
-        self.vole_tuples.append(VOLETuple(u=u, b=b, rho_u_t=rho_u_t, degree=degree))
+        self.vole_tuples.append(VOLETuple(u=u, b=b, rho_u_t=rho_u_t, degree_poly=degree_poly))
 
     def __str__(self):
-        tuples_str = "\n".join(str(t) for t in self.vole_tuples_prover)
+        tuples_str = "\n".join(str(t) for t in self.vole_tuples)
         return (
             "=== Prover ===\n"
             # f"witness: {self.w}\n"
@@ -176,6 +132,7 @@ class Prover:
         # compute correction value
         w = self.vole_tuples[index].w
         u = self.vole_tuples[index].u
+        assert w is not None and u is not None, "witness or random u not set for this index"
         d = w - u
         return d
     
@@ -194,13 +151,14 @@ class Prover:
 class Verifier:
     delta: FprElement | None = None
     vole_tuples: list[VOLETuple] = field(default_factory=list)
-    vole_tuples_verifier: list[VOLEVerifier] = field(default_factory=list)
+    
+    
 
-    def append_eval(self, v:FprElement, gamma_u_delta:FprElement, degree:int)->None:
-        self.vole_tuples.append(VOLETuple(u=None, b=None, v=v, gamma_u_delta=gamma_u_delta, degree=degree))
+    def append_eval(self, v:FprElement, gamma_u_delta:FprElement, degree_poly:int)->None:
+        self.vole_tuples.append(VOLETuple(u=None, b=None, v=v, gamma_u_delta=gamma_u_delta, degree_poly=degree_poly))
 
     def __str__(self):
-        tuples_str = "\n".join(str(t) for t in self.vole_tuples_verifier)
+        tuples_str = "\n".join(str(t) for t in self.vole_tuples)
         return (
             "=== Verifier ===\n"
             f"delta: {self.delta}\n"
@@ -231,7 +189,9 @@ class Verifier:
 # Testing
 # ---------------------------------------------------
 
+
 def test_evaluation(prover: Prover, verifier: Verifier):
+    #not in use
 
     for i in range(len(prover.vole_tuples)):
 
@@ -289,8 +249,8 @@ def sVOLE(prover: Prover, verifier: Verifier, command, *args):
             assert gamma_u_delta == v, "Evaluation of rho_u at delta does not match expected value"
             #-----------------------------------
 
-            prover.append_commit(u, b, rho_u_t, degree=1)
-            verifier.append_eval(v, gamma_u_delta, degree=1)
+            prover.append_commit(u, b, rho_u_t, degree_poly=1)
+            verifier.append_eval(v, gamma_u_delta, degree_poly=1)
 
             #-----------------------------------
             
@@ -302,7 +262,7 @@ def sVOLE(prover: Prover, verifier: Verifier, command, *args):
 
 
 
-def commit(prover:Prover, verifier: Verifier, witness: list[FpElement], degree:int)-> None:
+def commit(prover:Prover, verifier: Verifier, witness: list[FpElement], degree_poly:int)-> None:
     """
     Commit phase of sVOLE protocol.
     x in [Fp, Fp...] is the list of witnesses that the prover wants to commit to, and prove knowledge of.  
@@ -338,22 +298,6 @@ def commit(prover:Prover, verifier: Verifier, witness: list[FpElement], degree:i
         #verifier recomputes vole evaluation and updates it
         gamma_w_delta= verifier.update_eval_with_correction(d,i)
 
-        #create PROVER and verifier voles
-        proverVOLE = VOLEProver(
-            rho_w_t=rho_w_t,
-        )
-
-        verifierVOLE = VOLEVerifier(
-            gamma_w_delta=gamma_w_delta,
-        )
-
-        vole = VOLE(
-            proverVOLE=proverVOLE,
-            verifierVOLE=verifierVOLE
-        )
-
-        prover.vole_tuples_prover.append(proverVOLE)
-        verifier.vole_tuples_verifier.append(verifierVOLE)
 
 
 
@@ -361,7 +305,7 @@ def commit(prover:Prover, verifier: Verifier, witness: list[FpElement], degree:i
     
     
 
-def open(prover: Prover, verifier: Verifier, index:int, degree:int , x:FpElement = None)->None:
+def open(prover: Prover, verifier: Verifier, index:int,  x:FpElement = None)->None:
     """
     Open phase of sVOLE protocol.
     Prover sends polynomial rho_w(t) i.e the coefficients, w
@@ -375,20 +319,13 @@ def open(prover: Prover, verifier: Verifier, index:int, degree:int , x:FpElement
     #--sanity checks---
     assert index < len(prover.vole_tuples), "Invalid index for opening"
     assert index < len(verifier.vole_tuples), "Invalid index for opening"
-    assert prover.vole_tuples[index].w == x, f"Prover's witness: {prover.vole_tuples[index].w}, expected witness: {x}"
+    assert prover.vole_tuples[index].w == x, f"Prover's witness: {prover.vole_tuples[index].w}, you gave me: {x}"
     #----
 
     rho_w_t = prover.vole_tuples[index].rho_w_t #prover sends this and all associatyed data such as degree
+    assert rho_w_t is not None, "Prover's VOLE polynomial is None"
     assert rho_w_t(verifier.delta) == verifier.vole_tuples[index].gamma_w_delta, "eval not equal"
     
-    if rho_w_t.degree() != rho_w_t.degree :
-        print(f"degree of rho_w_t is {rho_w_t.degree()}, expected degree is {rho_w_t.degree}")
-        # wrapped around and highest degree term in 0
-
-    assert rho_w_t.coefficients()[-1]== x, "highest degree coefficeint not equal"
-    
-    # assert 
-    # add degree check
 
     print(f"opening of {x=} succesful")
     pass
@@ -400,45 +337,69 @@ def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
     p1_verifier = verifier.vole_tuples[x_index].gamma_w_delta
     p2 = prover.vole_tuples[y_index].rho_w_t
     p2_verifier = verifier.vole_tuples[y_index].gamma_w_delta
+
+    assert p1 is not None, f"Prover's VOLE polynomial is None for index {x_index}"
+    assert p2 is not None, f"Prover's VOLE polynomial is None for index {y_index}"
+    assert p1_verifier is not None, f"Verifier's VOLE evaluation is None for index {x_index}"
+    assert p2_verifier is not None, f"Verifier's VOLE evaluation is None for index {y_index}"
+
     d1 = p1.degree()
     d2 = p2.degree()
     print(f"d1={d1}, d2={d2}")
     Delta = verifier.delta
 
-    if d1==d2:
+    
+
+    
+    if d1==d2:     
         
         p3 = p1 + p2        
         
         p3_verifier = p1_verifier + p2_verifier
-        degree = d1
+        degree_poly = d1
+
+        # add witness
+        # Possibility 1: if degree_poly == p3.degree(), then highest coeff is witness
+        if degree_poly == p3.degree():
+            p3_witness = p3.coefficients()[-1]
+        elif degree_poly < p3.degree():
+        # Possibility 2: if degree_poly < p3.degree(), then we might have wrapped and gotten 0 as highest coeff, then witness is 0
+            p3_witness = 0
         # print(f"{p3=}")
         
         # print(f"p3_verifier={p3_verifier}")
         
     elif d2>d1:
-        degree = d2
+        degree_poly = d2
         p3 = p1* T**(d2-d1) + p2
         p3_verifier = p1_verifier* Delta**(d2-d1) + p2_verifier
         # print(f"{p3=}")
         # print(f"p3_verifier={p3_verifier}")
 
-    elif d1>d2:
-        degree = d1
+    else: # d1>d2:
+        degree_poly = d1
         p3 = p2* T**(d1-d2) + p1
         p3_verifier = p2_verifier* Delta**(d1-d2) + p1_verifier
         # print(f"{p3=}")
         # print(f"p3_verifier={p3_verifier}")
 
-    print(f"degree of p3 is {p3.degree()}, expected degree is {degree}")
-    if degree != p3.degree():
-        # wrapped around and highest degree term in 0 
-        w = 0
-    else:
-        w = p3.coefficients()[-1]
+    
+
+    # Possibility 1: if degree_poly == p3.degree(), then highest coeff is witness
+    print(f"degree of resulting polynomial is {p3.degree()}, expected degree is {degree_poly}")
+    if degree_poly == p3.degree():
+        p3_witness = p3.coefficients()[-1]
+        print(f"witness is {p3_witness}")
+    else : 
+        #p3.degree()< degree_poly:
+        assert p3.degree() < degree_poly, f"Degree of resulting polynomial {p3.degree()} according to sage is less than expected {degree_poly}"
+    # Possibility 2: if degree_poly < p3.degree(), then we might have wrapped and gotten 0 as highest coeff, then witness is 0
+        p3_witness = 0
+        print(f"degree of resulting polynomial is less than expected, possible wrap around, setting witness to 0")
     
     # add VOLE tuple to prover and verifier state
-    prover.vole_tuples.append(VOLETuple(degree=degree, rho_w_t=p3, w = w))
-    verifier.vole_tuples.append(VOLETuple(degree=degree, gamma_w_delta=p3_verifier))
+    prover.vole_tuples.append(VOLETuple(degree_poly=degree_poly, rho_w_t=p3, w = p3_witness))
+    verifier.vole_tuples.append(VOLETuple(degree_poly=degree_poly, gamma_w_delta=p3_verifier))
 
 
 
@@ -452,11 +413,11 @@ verifier = Verifier()
 
 sVOLE(prover, verifier, "Init")
 
-VOLES_global_list = []
 
-VOLES_user_defined = [Fp(1), Fp(4)]
 
-commit(prover, verifier, VOLES_user_defined, 1)
+witness = [Fp(1), Fp(3)]
+
+commit(prover, verifier, witness, 1)
 
 
 # sVOLE(prover, verifier, "sVOLE", 1)
@@ -472,9 +433,9 @@ print(verifier)
 
 # test_evaluation(prover, verifier)
 
-open(prover, verifier, 0, 1,  VOLES_user_defined[0])
-open(prover, verifier, 1, 1, VOLES_user_defined[1])
-open(prover, verifier, 2, 1)
+open(prover, verifier, 0,  witness[0])
+open(prover, verifier, 1,  witness[1])
+open(prover, verifier, 2, witness[0]+witness[1])
 
 
 
