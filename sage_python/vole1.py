@@ -146,7 +146,7 @@ class Prover:
 
         
        
-        self.vole_tuples[index].context = f"(w_{index}={w})"
+        self.vole_tuples[index].context = f"w_{index}={w}"
         self.vole_tuples[index].w = w
         rho_w_t = w*T + self.vole_tuples[index].b # compute prover polynomail
         self.vole_tuples[index].rho_w_t = rho_w_t # update prover polynomial
@@ -483,6 +483,52 @@ def VOLE_add_constant(prover:Prover, verifier:Verifier, x_index:int, y:FpElement
     return p3_index
 
 
+def VOLE_multiply(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
+    p1 = prover.vole_tuples[x_index].rho_w_t
+    p1_verifier = verifier.vole_tuples[x_index].gamma_w_delta
+    p2 = prover.vole_tuples[y_index].rho_w_t
+    p2_verifier = verifier.vole_tuples[y_index].gamma_w_delta
+
+    assert p1 is not None, f"Prover's VOLE polynomial is None for index {x_index}"
+    assert p2 is not None, f"Prover's VOLE polynomial is None for index {y_index}"
+    assert p1_verifier is not None, f"Verifier's VOLE evaluation is None for index {x_index}"
+    assert p2_verifier is not None, f"Verifier's VOLE evaluation is None for index {y_index}"
+
+    d1_poly = prover.vole_tuples[x_index].degree_poly
+    d2_poly = prover.vole_tuples[y_index].degree_poly
+    
+    Delta = verifier.delta
+
+
+    
+    print(f"{Delta=}")
+    
+
+    p3 = p1*p2
+    p3_verifier = p1_verifier * p2_verifier
+    print(f"{p3=}")
+    print(f"{p3_verifier=}")
+    assert p3(Delta)==p3_verifier, f"mult does not match up"
+
+    degree_poly = d1_poly + d2_poly
+    if degree_poly == p1.degree() + p2.degree():
+        #witness is the highest coeff in p3
+        p3_witness =p3.coefficients()[-1]
+    else:
+        #p1.degree()+p2.degree()<degree_poly
+        w=0
+
+    
+
+    context = f"({prover.vole_tuples[x_index].context}) * ({prover.vole_tuples[y_index].context})"
+    # add VOLE tuple to prover and verifier state
+    
+    prover.vole_tuples.append(VOLETuple(degree_poly=degree_poly, rho_w_t=p3, w = p3_witness, context = context))
+    verifier.vole_tuples.append(VOLETuple(degree_poly=degree_poly, gamma_w_delta=p3_verifier, context="None"))
+
+    p3_index = len(prover.vole_tuples) -1
+    return p3_index
+
 
 
 # ---------------------------------------------------
@@ -507,6 +553,8 @@ commit(prover, verifier, witness, 1)
 VOLE_add(prover, verifier, 0, 1)
 VOLE_add(prover, verifier, 1, 2)
 VOLE_add_constant(prover, verifier, 0, 3)
+VOLE_multiply(prover, verifier, 0,1) #stored in 5
+VOLE_multiply(prover, verifier, 2 ,  5) 
 
 
 print()
@@ -521,5 +569,11 @@ open(prover, verifier, 1,  witness[1])
 open(prover, verifier, 2, witness[0]+witness[1])
 open(prover, verifier, 3, )
 open(prover, verifier, 4 )
+open(prover, verifier, 5)
+open(prover, verifier, 6)
 
 
+# to do
+# 1. write more to print statemts in opening message (add index)
+# 2. Start using the return indexes
+#. 3. docstrings for VOLE_add, VOLE_add_consatnt ....
