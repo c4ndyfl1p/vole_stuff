@@ -20,8 +20,8 @@ T: Polynomial
 # Field Setup
 # ---------------------------------------------------
 
-p = 2**31 -1
-r = 4
+p = 5
+r = 3
 
 Fp = GF(p)
 Fpr = Fp.extension(r, 'a')
@@ -222,7 +222,7 @@ class Verifier:
 # Testing
 # ---------------------------------------------------
 
-
+"""
 def test_evaluation(prover: Prover, verifier: Verifier):
     #not in use
 
@@ -238,7 +238,7 @@ def test_evaluation(prover: Prover, verifier: Verifier):
         assert vole_witness.check2(verifier.delta), "Evaluation with correction failed"
 
     print("All VOLE relations verified ✓")
-
+"""
 
 # ---------------------------------------------------
 # sVOLE protocol
@@ -388,16 +388,22 @@ def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int)->int:
     assert p1_verifier is not None, f"Verifier's VOLE evaluation is None for index {x_index}"
     assert p2_verifier is not None, f"Verifier's VOLE evaluation is None for index {y_index}"
 
-    d1 = p1.degree()
-    d2 = p2.degree()
-    print(f"d1={d1}, d2={d2}")
+    #d1 = p1.degree()
+    #d2 = p2.degree()
+    d1 = prover.vole_tuples[x_index].degree_poly
+    d2 = prover.vole_tuples[y_index].degree_poly
+    print(f"VOLE_ADD: d1={d1}, d2={d2}")
     Delta = verifier.delta
 
+    print(f"{p1=}")
+    print(f"{p2=}")
+    
     
     
 
     
-    if d1==d2:     
+    if d1==d2:
+        print(f"VOLE_add takes branch 1 where d1=d2")     
         
         p3 = p1 + p2        
         
@@ -409,25 +415,34 @@ def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int)->int:
         # print(f"p3_verifier={p3_verifier}")
         
     elif d2>d1:
+        print(f"VOLE_add takes branmch 2 where d2>d2")  
         degree_poly = d2
-        p3 = p1* T**(d2-d1) + p2
+        p1_lifted = p1 * T**(d2-d1)
+        print(f"{p1_lifted=}")
+        p3 = p1_lifted + p2
         p3_verifier = p1_verifier* Delta**(d2-d1) + p2_verifier
         # print(f"{p3=}")
         # print(f"p3_verifier={p3_verifier}")
 
     else: # d1>d2:
+        print(f"VOLE_add takes branch 3 where d1>d2")  
         degree_poly = d1
-        p3 = p2* T**(d1-d2) + p1
+        p2_lifted = p2* T**(d1-d2)
+        print(f"{p2_lifted=}")
+        p3 = p2_lifted + p1
+        
         p3_verifier = p2_verifier* Delta**(d1-d2) + p1_verifier
         # print(f"{p3=}")
         # print(f"p3_verifier={p3_verifier}")
 
-    
+    print(f"{p3=}")
+
+    assert p3(Delta)== p3_verifier , "VOLE_add does not work" #sanity check that that the proverr poly and verifierr poly evaluate correctly
 
     # Possibility 1: if degree_poly == p3.degree(), then highest coeff is witness
     # we do this becuase if p3's higehst coeff is 0,  sage does not actually store at, and reudces the degree internally i.e sage stores
     # polynoimials in norrmalized form, (leading 0 co-effs are automatically removed)
-    print(f"degree of resulting polynomial is {p3.degree()}, expected degree is {degree_poly}")
+    print(f"degree of resulting polynomial is {p3.degree()} accorridng to sage, expected degree is {degree_poly}")
     if degree_poly == p3.degree():
         p3_witness = p3.coefficients()[-1]
         print(f"witness is {p3_witness}")
@@ -457,21 +472,21 @@ def VOLE_add_constant(prover:Prover, verifier:Verifier, x_index:int, y:FpElement
     assert Delta is not None, f"Verifier's Delta is None"
 
 
-    d1 = p1.degree()
+    d1_degree_from_sage = p1.degree()
     p1_degree_from_state = prover.vole_tuples[x_index].degree_poly
     assert p1_degree_from_state is not None, f"Prover's VOLE poly's degree is none for index {x_index}"
 
     
 
-    print(f"d1={d1}, {p1_degree_from_state=}")
-    if d1 == p1_degree_from_state:
+    print(f"d1={d1_degree_from_sage}, {p1_degree_from_state=}")
+    if d1_degree_from_sage == p1_degree_from_state:
         print(f"degree from state matches degree from sage, using degree from state")
         p3_witness = p1.coefficients()[-1] + y
     else: 
         print(f"degree from state is greater than degree from sage, possible wrap around, using degree from state and setting witness to {y}")
         p3_witness = y
 
-    degree_poly = max(p1_degree_from_state, d1)
+    degree_poly = max(p1_degree_from_state, d1_degree_from_sage)
     assert degree_poly is not None 
     print(f"{degree_poly=}")
   
@@ -549,46 +564,47 @@ def VOLE_multiply(prover:Prover, verifier:Verifier, x_index:int, y_index:int)->i
 # ---------------------------------------------------
 # Run protocol
 # ---------------------------------------------------
+if __name__ == "__main__":
+        
+    prover = Prover()
+    verifier = Verifier()
 
-prover = Prover()
-verifier = Verifier()
-
-sVOLE(prover, verifier, "Init")
-
-
-
-witness = [Fp(1), Fp(3)]
-voles_list = []
-
-id0_1 = commit(prover, verifier, witness, 1)
+    sVOLE(prover, verifier, "Init")
 
 
-# sVOLE(prover, verifier, "sVOLE", 1)
+
+    witness = [Fp(1), Fp(3)]
+    voles_list = []
+
+    id0_1 = commit(prover, verifier, witness, 1)
 
 
-id_2= VOLE_add(prover, verifier, 0, 1)
-id_3= VOLE_add(prover, verifier, 1, 2)
-id_4=VOLE_add_constant(prover, verifier, 0, 3)
-id_5= VOLE_multiply(prover, verifier, 0,1) #stored in 5
-id_6=VOLE_multiply(prover, verifier, 2 ,  5) 
+    # sVOLE(prover, verifier, "sVOLE", 1)
 
 
-print()
-print(prover)
-print()
-print(verifier)
+    id_2= VOLE_add(prover, verifier, 0, 1)
+    id_3= VOLE_add(prover, verifier, 1, 2)
+    id_4=VOLE_add_constant(prover, verifier, 0, 3)
+    id_5= VOLE_multiply(prover, verifier, 0,1) #stored in 5
+    id_6=VOLE_multiply(prover, verifier, 2 ,  5) 
 
-# test_evaluation(prover, verifier)
 
-open(prover, verifier, 0,  witness[0])
-open(prover, verifier, 1,  witness[1])
-open(prover, verifier, 2, witness[0]+witness[1])
-open(prover, verifier, 3, )
-open(prover, verifier, 4 )
-open(prover, verifier, 5)
-open(prover, verifier, 6)
+    print()
+    print(prover)
+    print()
+    print(verifier)
 
-#to dos:
-# consider using leadingcoefficient for sage,p.leading_coefficient()
-# add docstr9ings fro VOLE absed operations
-# tests for VOLE based operations
+    # test_evaluation(prover, verifier)
+
+    open(prover, verifier, 0,  witness[0])
+    open(prover, verifier, 1,  witness[1])
+    open(prover, verifier, 2, witness[0]+witness[1])
+    open(prover, verifier, 3, )
+    open(prover, verifier, 4 )
+    open(prover, verifier, 5)
+    open(prover, verifier, 6)
+
+    #to dos:
+    # consider using leadingcoefficient for sage,p.leading_coefficient()
+    # add docstr9ings fro VOLE absed operations
+    # tests for VOLE based operations
