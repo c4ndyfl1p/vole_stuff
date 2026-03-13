@@ -538,15 +538,24 @@ def VOLE_multiply(prover:Prover, verifier:Verifier, x_index:int, y_index:int)->i
     p3_verifier = p1_verifier * p2_verifier
     print(f"{p3=}")
     print(f"{p3_verifier=}")
+
+    # sanity check that witness matches up
     assert p3(Delta)==p3_verifier, f"mult does not match up"
 
+    #----computing witness and degree of resultant vole----
     degree_poly = d1_poly + d2_poly
     if degree_poly == p1.degree() + p2.degree():
         #witness is the highest coeff in p3
         p3_witness =p3.coefficients()[-1]
+
+        # sanity check witness
+        
     else:
         #p1.degree()+p2.degree()<degree_poly
         p3_witness=0
+
+    # sanity check that witness is correct
+    assert p3_witness == (prover.vole_tuples[x_index].w * prover.vole_tuples[y_index].w), f"VOLE multiply witness does not match expected value, got {p3_witness}, expected {prover.vole_tuples[x_index].w * prover.vole_tuples[y_index].w}"
 
     
 
