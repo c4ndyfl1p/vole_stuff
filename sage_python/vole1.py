@@ -20,8 +20,8 @@ T: Polynomial
 # Field Setup
 # ---------------------------------------------------
 
-p = 5
-r = 3
+p = 2**31 -1
+r = 4
 
 Fp = GF(p)
 Fpr = Fp.extension(r, 'a')
@@ -40,8 +40,8 @@ print(f"modulus of field is {Fpr.modulus()}")
 
 @dataclass
 class VOLETuple:
-    context: str
-    degree_poly :int
+    context: str #context in terms of witness
+    degree_poly :int #need ot keep track of the degree as sage consideres 0T^3 + 6T^2 + 2 to have degree 2, not 3 which casues problems with addition and keeping track of witness
 
     #random vole
     rho_u_t:       FprPoly = None # uT + b
@@ -352,11 +352,31 @@ def open(prover: Prover, verifier: Verifier, index:int,  x:FpElement = None)->No
     assert rho_w_t(verifier.delta) == verifier.vole_tuples[index].gamma_w_delta, "eval not equal"
     
 
-    print(f"opening of {x=} succesful")
+    print(f"At {index=} opening of {x=} succesful")
     pass
 
 
-def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
+def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int)->int:
+    """Adds to VOLES 
+    Add: [[x + y]]^p_d = [[x]]^p_d1 + [[y]]^p_d2 , where d = d2 and d1 ≤ d2:  
+    • P outputs ρ_z(t) = t^(d2-d1) ρ_x(t) + ρ_y(t)  
+    • V outputs γ_z = Δ^(d_2−d_1) γ_x + γ_y
+
+    This function:
+    1. Adds 2 voles and stores the output in both prover and verifier state.(we sanity check they are equal)
+    2. computes the degree of the resultant vole and stores that in prover's state(need to add verifier state storing)
+    3. computes the witness of the resultant vole and adds that (ie t he highest degree coeff)
+    4. computes context string f.ex w3=w1+w2 and adds that to provers vole tuple
+
+    Args:
+        prover (Prover): _description_
+        verifier (Verifier): _description_
+        x_index (int): index of the 1st addend VOLE typle at prover/verifier
+        y_index (int): index of the 2nd addend vole tuple at the prover and the verrifier
+
+    Returns:
+        int: index of the resultant vole in provers state
+    """
     
     p1 = prover.vole_tuples[x_index].rho_w_t
     p1_verifier = verifier.vole_tuples[x_index].gamma_w_delta
@@ -385,13 +405,6 @@ def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
         degree_poly = d1
 
         # add witness
-        # Possibility 1: if degree_poly == p3.degree(), then highest coeff is witness
-        if degree_poly == p3.degree():
-            p3_witness = p3.coefficients()[-1]
-        elif degree_poly < p3.degree():
-        # Possibility 2: if degree_poly < p3.degree(), then we might have wrapped and gotten 0 as highest coeff, then witness is 0
-            p3_witness = 0
-        # print(f"{p3=}")
         
         # print(f"p3_verifier={p3_verifier}")
         
@@ -412,6 +425,8 @@ def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
     
 
     # Possibility 1: if degree_poly == p3.degree(), then highest coeff is witness
+    # we do this becuase if p3's higehst coeff is 0,  sage does not actually store at, and reudces the degree internally i.e sage stores
+    # polynoimials in norrmalized form, (leading 0 co-effs are automatically removed)
     print(f"degree of resulting polynomial is {p3.degree()}, expected degree is {degree_poly}")
     if degree_poly == p3.degree():
         p3_witness = p3.coefficients()[-1]
@@ -432,7 +447,7 @@ def VOLE_add(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
     p3_index = len(prover.vole_tuples) -1
     return p3_index
 
-def VOLE_add_constant(prover:Prover, verifier:Verifier, x_index:int, y:FpElement):    
+def VOLE_add_constant(prover:Prover, verifier:Verifier, x_index:int, y:FpElement)->int:    
     p1 = prover.vole_tuples[x_index].rho_w_t
     p1_verifier = verifier.vole_tuples[x_index].gamma_w_delta
     Delta = verifier.delta
@@ -483,7 +498,7 @@ def VOLE_add_constant(prover:Prover, verifier:Verifier, x_index:int, y:FpElement
     return p3_index
 
 
-def VOLE_multiply(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
+def VOLE_multiply(prover:Prover, verifier:Verifier, x_index:int, y_index:int)->int:
     p1 = prover.vole_tuples[x_index].rho_w_t
     p1_verifier = verifier.vole_tuples[x_index].gamma_w_delta
     p2 = prover.vole_tuples[y_index].rho_w_t
@@ -516,7 +531,7 @@ def VOLE_multiply(prover:Prover, verifier:Verifier, x_index:int, y_index:int):
         p3_witness =p3.coefficients()[-1]
     else:
         #p1.degree()+p2.degree()<degree_poly
-        w=0
+        p3_witness=0
 
     
 
@@ -543,18 +558,19 @@ sVOLE(prover, verifier, "Init")
 
 
 witness = [Fp(1), Fp(3)]
+voles_list = []
 
-commit(prover, verifier, witness, 1)
+id0_1 = commit(prover, verifier, witness, 1)
 
 
 # sVOLE(prover, verifier, "sVOLE", 1)
 
 
-VOLE_add(prover, verifier, 0, 1)
-VOLE_add(prover, verifier, 1, 2)
-VOLE_add_constant(prover, verifier, 0, 3)
-VOLE_multiply(prover, verifier, 0,1) #stored in 5
-VOLE_multiply(prover, verifier, 2 ,  5) 
+id_2= VOLE_add(prover, verifier, 0, 1)
+id_3= VOLE_add(prover, verifier, 1, 2)
+id_4=VOLE_add_constant(prover, verifier, 0, 3)
+id_5= VOLE_multiply(prover, verifier, 0,1) #stored in 5
+id_6=VOLE_multiply(prover, verifier, 2 ,  5) 
 
 
 print()
@@ -572,8 +588,7 @@ open(prover, verifier, 4 )
 open(prover, verifier, 5)
 open(prover, verifier, 6)
 
-
-# to do
-# 1. write more to print statemts in opening message (add index)
-# 2. Start using the return indexes
-#. 3. docstrings for VOLE_add, VOLE_add_consatnt ....
+#to dos:
+# consider using leadingcoefficient for sage,p.leading_coefficient()
+# add docstr9ings fro VOLE absed operations
+# tests for VOLE based operations
